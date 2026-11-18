@@ -105,6 +105,7 @@ from .const import (
     CONF_LINKED_DOORBELL_SENSOR,
     CONF_LINKED_HUMIDITY_SENSOR,
     CONF_LINKED_MOTION_SENSOR,
+    CONF_LINKED_PM10_SENSOR,
     CONF_LINKED_PM25_SENSOR,
     CONF_LINKED_TEMPERATURE_SENSOR,
     CONFIG_OPTIONS,
@@ -163,6 +164,7 @@ MOTION_SENSOR = (BINARY_SENSOR_DOMAIN, BinarySensorDeviceClass.MOTION)
 DOORBELL_EVENT_SENSOR = (EVENT_DOMAIN, EventDeviceClass.DOORBELL)
 HUMIDITY_SENSOR = (SENSOR_DOMAIN, SensorDeviceClass.HUMIDITY)
 TEMPERATURE_SENSOR = (SENSOR_DOMAIN, SensorDeviceClass.TEMPERATURE)
+PM10_SENSOR = (SENSOR_DOMAIN, SensorDeviceClass.PM10)
 PM25_SENSOR = (SENSOR_DOMAIN, SensorDeviceClass.PM25)
 
 
@@ -1007,6 +1009,11 @@ class HomeKit:
             if current_humidity_sensor_entity_id := lookup.get(HUMIDITY_SENSOR):
                 config[entity_id].setdefault(
                     CONF_LINKED_HUMIDITY_SENSOR, current_humidity_sensor_entity_id
+                )
+            if pm10_sensor_entity_id := lookup.get(PM10_SENSOR):
+                config[entity_id].setdefault(CONF_TYPE, TYPE_AIR_PURIFIER)
+                config[entity_id].setdefault(
+                    CONF_LINKED_PM10_SENSOR, pm10_sensor_entity_id
                 )
             if current_pm25_sensor_entity_id := lookup.get(PM25_SENSOR):
                 config[entity_id].setdefault(CONF_TYPE, TYPE_AIR_PURIFIER)

@@ -35,12 +35,14 @@ from .const import (
     CHAR_FILTER_CHANGE_INDICATION,
     CHAR_FILTER_LIFE_LEVEL,
     CHAR_NAME,
+    CHAR_PM10_DENSITY,
     CHAR_PM25_DENSITY,
     CHAR_ROTATION_SPEED,
     CHAR_TARGET_AIR_PURIFIER_STATE,
     CONF_LINKED_FILTER_CHANGE_INDICATION,
     CONF_LINKED_FILTER_LIFE_LEVEL,
     CONF_LINKED_HUMIDITY_SENSOR,
+    CONF_LINKED_PM10_SENSOR,
     CONF_LINKED_PM25_SENSOR,
     CONF_LINKED_TEMPERATURE_SENSOR,
     SERV_AIR_PURIFIER,
@@ -55,6 +57,7 @@ from .util import (
     cleanup_name_for_homekit,
     convert_to_float,
     density_to_air_quality,
+    density_to_air_quality_pm10,
     temperature_to_homekit,
 )
 
@@ -76,7 +79,7 @@ class AirPurifier(Fan):
     """Generate an AirPurifier accessory for an air purifier entity.
 
     Currently supports, in addition to Fan properties:
-    temperature; humidity; PM2.5; auto mode.
+    temperature; humidity; PM2.5; PM10; auto mode.
     """
 
     def __init__(self, *args: Any) -> None:
@@ -106,6 +109,7 @@ class AirPurifier(Fan):
         self.preset_mode_chars: dict[str, Characteristic]
         self.char_current_humidity: Characteristic | None = None
         self.char_pm25_density: Characteristic | None = None
+        self.char_pm10_density: Characteristic | None = None
         self.char_current_temperature: Characteristic | None = None
         self.char_filter_change_indication: Characteristic | None = None
         self.char_filter_life_level: Characteristic | None = None
@@ -137,21 +141,30 @@ class AirPurifier(Fan):
                 self._async_update_current_humidity(humidity_state)
 
         self.linked_pm25_sensor = self.config.get(CONF_LINKED_PM25_SENSOR)
-        if self.linked_pm25_sensor:
-            pm25_serv = self.add_preload_service(
-                SERV_AIR_QUALITY_SENSOR,
-                [CHAR_AIR_QUALITY, CHAR_NAME, CHAR_PM25_DENSITY],
-            )
-            serv_air_purifier.add_linked_service(pm25_serv)
-            self.char_pm25_density = pm25_serv.configure_char(
-                CHAR_PM25_DENSITY, value=0
-            )
-
-            self.char_air_quality = pm25_serv.configure_char(CHAR_AIR_QUALITY)
-
-            pm25_state = self.hass.states.get(self.linked_pm25_sensor)
-            if pm25_state:
-                self._async_update_current_pm25(pm25_state)
+        self.linked_pm10_sensor = self.config.get(CONF_LINKED_PM10_SENSOR)
+        if self.linked_pm25_sensor or self.linked_pm10_sensor:
+            chars = [CHAR_AIR_QUALITY, CHAR_NAME]
+            if self.linked_pm25_sensor:
+                chars.append(CHAR_PM25_DENSITY)
+            if self.linked_pm10_sensor:
+                chars.append(CHAR_PM10_DENSITY)
+            service = self.add_preload_service(SERV_AIR_QUALITY_SENSOR, chars)
+            serv_air_purifier.add_linked_service(service)
+            self.char_air_quality = service.configure_char(CHAR_AIR_QUALITY)
+            if self.linked_pm25_sensor:
+                self.char_pm25_density = service.configure_char(
+                    CHAR_PM25_DENSITY, value=0
+                )
+                self._async_update_current_pm25(
+                    self.hass.states.get(self.linked_pm25_sensor)
+                )
+            if self.linked_pm10_sensor:
+                self.char_pm10_density = service.configure_char(
+                    CHAR_PM10_DENSITY, value=0
+                )
+                self._async_update_current_pm10(
+                    self.hass.states.get(self.linked_pm10_sensor)
+                )
 
         self.linked_temperature_sensor = self.config.get(CONF_LINKED_TEMPERATURE_SENSOR)
         if self.linked_temperature_sensor:
@@ -260,6 +273,16 @@ class AirPurifier(Fan):
                 )
             )
 
+        if self.linked_pm10_sensor:
+            self._subscriptions.append(
+                async_track_state_change_event(
+                    self.hass,
+                    [self.linked_pm10_sensor],
+                    self._async_update_current_pm10_event,
+                    job_type=HassJobType.Callback,
+                )
+            )
+
         if self.linked_filter_change_indicator_binary_sensor:
             self._subscriptions.append(
                 async_track_state_change_event(
@@ -309,6 +332,27 @@ class AirPurifier(Fan):
             current_humidity,
         )
         self.char_current_humidity.set_value(current_humidity)
+
+    @callback
+    def _async_update_current_pm10_event(
+        self, event: Event[EventStateChangedData]
+    ) -> None:
+        """Handle a linked PM10 state change."""
+        self._async_update_current_pm10(event.data["new_state"])
+
+    @callback
+    def _async_update_current_pm10(self, state: State | None) -> None:
+        """Update PM10 density and, on PM10-only purifiers, air quality."""
+        if (
+            state is None
+            or state.state in IGNORED_STATES
+            or (density := convert_to_float(state.state)) is None
+            or self.char_pm10_density is None
+        ):
+            return
+        self.char_pm10_density.set_value(density)
+        if not self.linked_pm25_sensor:
+            self.char_air_quality.set_value(density_to_air_quality_pm10(density))
 
     @callback
     def _async_update_current_pm25_event(

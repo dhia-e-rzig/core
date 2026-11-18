@@ -15,6 +15,7 @@ from homeassistant.components.fan import (
 )
 from homeassistant.components.homekit import (
     CONF_LINKED_HUMIDITY_SENSOR,
+    CONF_LINKED_PM10_SENSOR,
     CONF_LINKED_PM25_SENSOR,
     CONF_LINKED_TEMPERATURE_SENSOR,
 )
@@ -42,6 +43,32 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import Event, HomeAssistant
+
+
+@pytest.mark.parametrize("with_pm25", [False, True])
+async def test_linked_pm10(hass: HomeAssistant, hk_driver, with_pm25: bool) -> None:
+    """PM10 shares a service with PM2.5 without overriding its quality rating."""
+    hass.states.async_set("fan.demo", STATE_ON)
+    hass.states.async_set("sensor.pm10", "0")
+    config = {CONF_LINKED_PM10_SENSOR: "sensor.pm10"}
+    if with_pm25:
+        hass.states.async_set("sensor.pm25", "10")
+        config[CONF_LINKED_PM25_SENSOR] = "sensor.pm25"
+    acc = AirPurifier(hass, hk_driver, "Air Purifier", "fan.demo", 1, config)
+    hk_driver.add_accessory(acc)
+    (service,) = [s for s in acc.services if s.display_name == "AirQualitySensor"]
+    density = service.get_characteristic("PM10Density")
+    quality = service.get_characteristic("AirQuality")
+    assert density.value == 0
+    assert quality.value == (2 if with_pm25 else 1)
+    acc.run()
+    hass.states.async_set("sensor.pm10", "200")
+    await hass.async_block_till_done()
+    assert density.value == 200
+    assert quality.value == (2 if with_pm25 else 3)
+    hass.states.async_set("sensor.pm10", STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    assert density.value == 200
 
 
 @pytest.mark.parametrize(
