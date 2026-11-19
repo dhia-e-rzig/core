@@ -76,6 +76,7 @@ from .const import (
     CONF_LINKED_HUMIDITY_SENSOR,
     CONF_LINKED_MOTION_SENSOR,
     CONF_LINKED_OBSTRUCTION_SENSOR,
+    CONF_LINKED_PM1_SENSOR,
     CONF_LINKED_PM10_SENSOR,
     CONF_LINKED_PM25_SENSOR,
     CONF_LINKED_TEMPERATURE_SENSOR,
@@ -230,6 +231,7 @@ FAN_SCHEMA = BASIC_INFO_SCHEMA.extend(
             ),
         ),
         probatio.Optional(CONF_LINKED_HUMIDITY_SENSOR): cv.entity_domain(SENSOR_DOMAIN),
+        probatio.Optional(CONF_LINKED_PM1_SENSOR): cv.entity_domain(SENSOR_DOMAIN),
         probatio.Optional(CONF_LINKED_PM10_SENSOR): cv.entity_domain(SENSOR_DOMAIN),
         probatio.Optional(CONF_LINKED_PM25_SENSOR): cv.entity_domain(SENSOR_DOMAIN),
         probatio.Optional(CONF_LINKED_TEMPERATURE_SENSOR): cv.entity_domain(

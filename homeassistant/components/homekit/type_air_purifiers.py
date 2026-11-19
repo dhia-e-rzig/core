@@ -28,7 +28,9 @@ from homeassistant.helpers.event import async_track_state_change_event
 from .accessories import TYPES
 from .const import (
     CHAR_ACTIVE,
+    CHAR_AIR_PARTICULATE_DENSITY,
     CHAR_AIR_QUALITY,
+    CHAR_CONFIGURED_NAME,
     CHAR_CURRENT_AIR_PURIFIER_STATE,
     CHAR_CURRENT_HUMIDITY,
     CHAR_CURRENT_TEMPERATURE,
@@ -42,6 +44,7 @@ from .const import (
     CONF_LINKED_FILTER_CHANGE_INDICATION,
     CONF_LINKED_FILTER_LIFE_LEVEL,
     CONF_LINKED_HUMIDITY_SENSOR,
+    CONF_LINKED_PM1_SENSOR,
     CONF_LINKED_PM10_SENSOR,
     CONF_LINKED_PM25_SENSOR,
     CONF_LINKED_TEMPERATURE_SENSOR,
@@ -79,7 +82,7 @@ class AirPurifier(Fan):
     """Generate an AirPurifier accessory for an air purifier entity.
 
     Currently supports, in addition to Fan properties:
-    temperature; humidity; PM2.5; PM10; auto mode.
+    temperature; humidity; PM1; PM2.5; PM10; auto mode.
     """
 
     def __init__(self, *args: Any) -> None:
@@ -110,6 +113,7 @@ class AirPurifier(Fan):
         self.char_current_humidity: Characteristic | None = None
         self.char_pm25_density: Characteristic | None = None
         self.char_pm10_density: Characteristic | None = None
+        self.char_pm1_density: Characteristic | None = None
         self.char_current_temperature: Characteristic | None = None
         self.char_filter_change_indication: Characteristic | None = None
         self.char_filter_life_level: Characteristic | None = None
@@ -165,6 +169,25 @@ class AirPurifier(Fan):
                 self._async_update_current_pm10(
                     self.hass.states.get(self.linked_pm10_sensor)
                 )
+
+        # HomeKit has no PM1 characteristic, so PM1 gets its own named sensor.
+        self.linked_pm1_sensor = self.config.get(CONF_LINKED_PM1_SENSOR)
+        if self.linked_pm1_sensor:
+            pm1_serv = self.add_preload_service(
+                SERV_AIR_QUALITY_SENSOR,
+                [CHAR_NAME, CHAR_CONFIGURED_NAME, CHAR_AIR_PARTICULATE_DENSITY],
+                unique_id="pm1",
+            )
+            serv_air_purifier.add_linked_service(pm1_serv)
+            pm1_serv.configure_char(
+                CHAR_NAME, value=cleanup_name_for_homekit(f"{self.display_name} PM1")
+            )
+            pm1_serv.configure_char(CHAR_CONFIGURED_NAME, value="PM1")
+            self.char_pm1_air_quality = pm1_serv.configure_char(CHAR_AIR_QUALITY)
+            self.char_pm1_density = pm1_serv.configure_char(
+                CHAR_AIR_PARTICULATE_DENSITY, value=0
+            )
+            self._async_update_current_pm1(self.hass.states.get(self.linked_pm1_sensor))
 
         self.linked_temperature_sensor = self.config.get(CONF_LINKED_TEMPERATURE_SENSOR)
         if self.linked_temperature_sensor:
@@ -283,6 +306,16 @@ class AirPurifier(Fan):
                 )
             )
 
+        if self.linked_pm1_sensor:
+            self._subscriptions.append(
+                async_track_state_change_event(
+                    self.hass,
+                    [self.linked_pm1_sensor],
+                    self._async_update_current_pm1_event,
+                    job_type=HassJobType.Callback,
+                )
+            )
+
         if self.linked_filter_change_indicator_binary_sensor:
             self._subscriptions.append(
                 async_track_state_change_event(
@@ -352,6 +385,26 @@ class AirPurifier(Fan):
             return
         self.char_pm10_density.set_value(density)
         self._async_update_air_quality()
+
+    @callback
+    def _async_update_current_pm1_event(
+        self, event: Event[EventStateChangedData]
+    ) -> None:
+        """Handle a linked PM1 state change."""
+        self._async_update_current_pm1(event.data["new_state"])
+
+    @callback
+    def _async_update_current_pm1(self, state: State | None) -> None:
+        """Update PM1 density, rated on the PM2.5 scale."""
+        if (
+            state is None
+            or state.state in IGNORED_STATES
+            or (density := convert_to_float(state.state)) is None
+            or self.char_pm1_density is None
+        ):
+            return
+        self.char_pm1_density.set_value(density)
+        self.char_pm1_air_quality.set_value(density_to_air_quality(density))
 
     @callback
     def _async_update_air_quality(self) -> None:

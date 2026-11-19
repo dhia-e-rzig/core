@@ -2346,6 +2346,20 @@ async def test_homekit_finds_linked_air_purifier_sensors(
         device_id=device_entry.id,
         original_device_class=SensorDeviceClass.PM25,
     )
+    pm10_sensor = entity_registry.async_get_or_create(
+        "sensor",
+        "air_purifier",
+        "pm10_sensor",
+        device_id=device_entry.id,
+        original_device_class=SensorDeviceClass.PM10,
+    )
+    pm1_sensor = entity_registry.async_get_or_create(
+        "sensor",
+        "air_purifier",
+        "pm1_sensor",
+        device_id=device_entry.id,
+        original_device_class=SensorDeviceClass.PM1,
+    )
     temperature_sensor = entity_registry.async_get_or_create(
         "sensor",
         "air_purifier",
@@ -2407,6 +2421,8 @@ async def test_homekit_finds_linked_air_purifier_sensors(
             "sw_version": "0.16.1",
             "type": TYPE_AIR_PURIFIER,
             "linked_humidity_sensor": humidity_sensor.entity_id,
+            "linked_pm1_sensor": pm1_sensor.entity_id,
+            "linked_pm10_sensor": pm10_sensor.entity_id,
             "linked_pm25_sensor": pm25_sensor.entity_id,
             "linked_temperature_sensor": temperature_sensor.entity_id,
         },

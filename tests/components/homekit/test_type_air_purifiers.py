@@ -15,6 +15,7 @@ from homeassistant.components.fan import (
 )
 from homeassistant.components.homekit import (
     CONF_LINKED_HUMIDITY_SENSOR,
+    CONF_LINKED_PM1_SENSOR,
     CONF_LINKED_PM10_SENSOR,
     CONF_LINKED_PM25_SENSOR,
     CONF_LINKED_TEMPERATURE_SENSOR,
@@ -72,6 +73,27 @@ async def test_linked_pm10(hass: HomeAssistant, hk_driver, with_pm25: bool) -> N
     hass.states.async_set("sensor.pm10", STATE_UNAVAILABLE)
     await hass.async_block_till_done()
     assert density.value == 20
+
+
+async def test_linked_pm1(hass: HomeAssistant, hk_driver) -> None:
+    """PM1 is exposed as its own named air quality sensor."""
+    hass.states.async_set("fan.demo", STATE_ON)
+    hass.states.async_set("sensor.pm1", "8")
+    config = {CONF_LINKED_PM1_SENSOR: "sensor.pm1"}
+    acc = AirPurifier(hass, hk_driver, "Air Purifier", "fan.demo", 1, config)
+    hk_driver.add_accessory(acc)
+    (service,) = [s for s in acc.services if s.unique_id == "pm1"]
+    assert service.get_characteristic("ConfiguredName").value == "PM1"
+    density = service.get_characteristic("AirParticulateDensity")
+    quality = service.get_characteristic("AirQuality")
+    assert (density.value, quality.value) == (8, 1)
+    acc.run()
+    hass.states.async_set("sensor.pm1", "40")
+    await hass.async_block_till_done()
+    assert (density.value, quality.value) == (40, 3)
+    hass.states.async_set("sensor.pm1", STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    assert density.value == 40
 
 
 @pytest.mark.parametrize(
