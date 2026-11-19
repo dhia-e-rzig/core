@@ -47,7 +47,7 @@ from homeassistant.core import Event, HomeAssistant
 
 @pytest.mark.parametrize("with_pm25", [False, True])
 async def test_linked_pm10(hass: HomeAssistant, hk_driver, with_pm25: bool) -> None:
-    """PM10 shares a service with PM2.5 without overriding its quality rating."""
+    """PM10 shares a service with PM2.5 and the worse rating wins."""
     hass.states.async_set("fan.demo", STATE_ON)
     hass.states.async_set("sensor.pm10", "0")
     config = {CONF_LINKED_PM10_SENSOR: "sensor.pm10"}
@@ -65,10 +65,13 @@ async def test_linked_pm10(hass: HomeAssistant, hk_driver, with_pm25: bool) -> N
     hass.states.async_set("sensor.pm10", "200")
     await hass.async_block_till_done()
     assert density.value == 200
-    assert quality.value == (2 if with_pm25 else 3)
+    assert quality.value == 3
+    hass.states.async_set("sensor.pm10", "20")
+    await hass.async_block_till_done()
+    assert quality.value == (2 if with_pm25 else 1)
     hass.states.async_set("sensor.pm10", STATE_UNAVAILABLE)
     await hass.async_block_till_done()
-    assert density.value == 200
+    assert density.value == 20
 
 
 @pytest.mark.parametrize(

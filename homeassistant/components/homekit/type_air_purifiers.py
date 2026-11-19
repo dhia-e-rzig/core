@@ -342,7 +342,7 @@ class AirPurifier(Fan):
 
     @callback
     def _async_update_current_pm10(self, state: State | None) -> None:
-        """Update PM10 density and, on PM10-only purifiers, air quality."""
+        """Update PM10 density and air quality."""
         if (
             state is None
             or state.state in IGNORED_STATES
@@ -351,8 +351,21 @@ class AirPurifier(Fan):
         ):
             return
         self.char_pm10_density.set_value(density)
-        if not self.linked_pm25_sensor:
-            self.char_air_quality.set_value(density_to_air_quality_pm10(density))
+        self._async_update_air_quality()
+
+    @callback
+    def _async_update_air_quality(self) -> None:
+        """Rate air quality by the worst linked particulate density."""
+        air_quality = max(
+            density_to_air_quality(self.char_pm25_density.value)
+            if self.char_pm25_density
+            else 0,
+            density_to_air_quality_pm10(self.char_pm10_density.value)
+            if self.char_pm10_density
+            else 0,
+        )
+        self.char_air_quality.set_value(air_quality)
+        _LOGGER.debug("%s: Set air_quality to %d", self.entity_id, air_quality)
 
     @callback
     def _async_update_current_pm25_event(
@@ -381,9 +394,7 @@ class AirPurifier(Fan):
             current_pm25,
         )
         self.char_pm25_density.set_value(current_pm25)
-        air_quality = density_to_air_quality(current_pm25)
-        self.char_air_quality.set_value(air_quality)
-        _LOGGER.debug("%s: Set air_quality to %d", self.entity_id, air_quality)
+        self._async_update_air_quality()
 
     @callback
     def _async_update_current_temperature_event(
